@@ -608,6 +608,7 @@ static int sip_options_qualify_resolve_task(void *obj)
 		pjsip_tx_data *tdata;
 		pjsip_via_hdr *via;
 		pjsip_transaction *tsx = NULL;
+		pjsip_host_info req_dest;
 
 		if (ast_sip_create_request("OPTIONS", NULL, batch->endpoint, NULL,
 			batch->contact, &tdata)) {
@@ -628,6 +629,19 @@ static int sip_options_qualify_resolve_task(void *obj)
 		 * destination here avoids PJSIP re-resolving and choosing only the
 		 * first DNS result.
 		 */
+		 /*
+		  * pjproject only copies the destination host name into
+		  * dest_info.name when it resolves the target itself. Because the
+		  * address is pre-resolved here, set it explicitly. Otherwise an
+		  * existing secure transport (TLS or WebSocket, which is registered
+		  * as secure) is never matched by pjsip_tpmgr_acquire_transport2(),
+		  * as it compares dest_info.name with the transport's remote host.
+		  * For WebSocket contacts that results in PJSIP_EUNSUPTRANSPORT.
+		 */
+		if (!tdata->dest_info.name.slen
+			&& pjsip_get_request_dest(tdata, &req_dest) == PJ_SUCCESS) {
+			pj_strdup(tdata->pool, &tdata->dest_info.name, &req_dest.addr.host);
+		}
 		tdata->dest_info.addr.count = 1;
 		tdata->dest_info.cur_addr = 0;
 		tdata->dest_info.addr.entry[0].type = task_data->addresses.entry[idx].type;
